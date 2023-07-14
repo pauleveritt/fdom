@@ -1,0 +1,14 @@
+[project]
+name = "fdom"
+version = "0.1"
+description = "Template engine based on tag strings and functional ideas."
+readme = "README.md"
+authors = [{name = "Jim Baker"}, {name = "Paul Everitt"}]
+dependencies = [
+  "sphinx",
+  "myst-parser",
+  "sphinx-autobuild",
+  "sphinx-book-theme",
+  "pytest",
+]
+
