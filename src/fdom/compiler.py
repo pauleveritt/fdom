@@ -4,9 +4,9 @@ from collections import deque
 from dataclasses import dataclass, field
 from functools import lru_cache
 from html.parser import HTMLParser
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable, Literal, NamedTuple
 
-from tagstr.taglib import decode_raw, Thunk
+from fdom.thunky import Chunk, Thunk, convert_to_proposed_scheme
 
 
 # AST model
@@ -30,26 +30,30 @@ class Tag:
     children: Children = field(default_factory=list)
 
 
-# NOTE treating Chunk and Thunk equivalent to str and tuple is WRONG - but but but it's fine for now
-# given Chunk is-a str, and Thunk is-a tuple
-# and a raw string is just a string that only requires decoding in *some* cases
+# "normalize" thunks such that they are suitable for keys,
+# that is regardless of getvalue, text, we only care about conv,
+# formatspec - if specified (not None)
 
-Chunk = str  # WRONG!!! but works for our demo purposes
+class KeyThunk(NamedTuple):
+    conv: Literal['a', 'r', 's'] | None = None
+    formatspec: str | None = None
 
-def make_key(*args: Chunk | Thunk) -> tuple[Chunk | tuple, ...]:
+
+def make_key(*args: Chunk | Thunk) -> tuple[Chunk | KeyThunk, ...]:
+    args = convert_to_proposed_scheme(*args)
     key_args = []
     for arg in args:
         match arg:
             case Chunk():
                 key_args.append(arg)
-            case Thunk((_, _, conv, formatspec)) as t:
-                key_args.append((None, None, conv, formatspec))
+            case Thunk() as t:
+                key_args.append(KeyThunk(t.conv, t.formatspec))
     return tuple(key_args)
 
 
-def parse_template_as_ast(*args: str | Thunk) -> Tag:
+def parse_template_as_ast(*args: Chunk | Thunk) -> Tag:
     parser = ASTParser()
-    for i, arg in enumerate(decode_raw(*args)):
+    for i, arg in enumerate(args):
         parser.feed(i, arg)
     return parser.result()
 
@@ -75,19 +79,22 @@ def compile_it(*keyed_args) -> Callable:
     # takes the same signature as the tag function because it ignores the
     # chunks, for convenience sake, and only applies the interpolations
     # from the thunks)
-    return VDOMCompiler()(parse_template_as_ast(*keyed_args))
+    ast = parse_template_as_ast(*keyed_args)
+    print("AST:\n", ast)
+    return VDOMCompiler()(ast)
 
 
-def html(*args: str | Thunk):
+def html(*args: Chunk | Thunk):
     # applies the partial function to the args, per above -
-    # as noted above, only the interpolations from the thunks now matter here
+    # as noted above, only the interpolations from the thunks now matter
+    # here
+    args = convert_to_proposed_scheme(*args)
     return compile_it(*make_key(*args))(vdom, *args)
 
 
-# Q: PEP8 tag_name instead tagName
 # Q: Return either a namedtuple or a typed dict
-def vdom(tagName: str, attributes: dict | None, children: list | None) -> dict:
-    d = {"tagName": tagName}
+def vdom(tag_name: str, attributes: dict | None, children: list | None) -> dict:
+    d = {"tag_name": tag_name}
     if attributes:
         d["attributes"] = attributes
     if children:
@@ -96,10 +103,10 @@ def vdom(tagName: str, attributes: dict | None, children: list | None) -> dict:
 
 
 class BaseCompiler:
-    # Q: Need to initialize "lines", what's the typing?
-    def __init__(self, indent=2, name="compiled"):
-        self.indent = indent
-        self.name = name
+    def __init__(self, indent: int = 2, name: str = "compiled"):
+        self.indent: int = indent
+        self.name: str = name
+        # note self.lines is defined by child class, list[str] = []
 
     @property
     def code(self) -> str:
@@ -111,7 +118,7 @@ class BaseCompiler:
 
     def __call__(self, tag: Tag) -> Callable:
         self.compile(tag)
-        print(self.code)
+        print("Compiled code:\n", self.code)
 
         # standard boilerplate to compile a string into a callable
         code_obj = compile(self.code, "<string>", "exec")
@@ -165,7 +172,7 @@ class VDOMCompiler(BaseCompiler):
 # We choose this symbol because, after replacing all $ with $$, there is no way for a
 # user to feed a string that would result in x$x. Thus we can reliably split an HTML
 # data string on x$x. We also choose this because, the HTML parse looks for tag names
-# begining with the regex pattern '[a-zA-Z]'.
+# beginning with the regex pattern '[a-zA-Z]'.
 PLACEHOLDER = "x$x"
 
 
@@ -184,12 +191,12 @@ class ASTParser(HTMLParser):
         self.stack: list[Tag] = [self.root]
         self.interpolations: deque[Interpolation] = deque()
 
-    def feed(self, index: int, data: str | Thunk) -> None:
+    def feed(self, index: int, data: Chunk | KeyThunk) -> None:
         match data:
-            case str():
-                super().feed(escape_placeholder(data))
-            case _, _, conv, formatspec:
-                self.interpolations.append(Interpolation(index, conv, formatspec))
+            case Chunk() as c:
+                super().feed(escape_placeholder(c.decoded))
+            case KeyThunk() as t:
+                self.interpolations.append(Interpolation(index, t.conv, t.formatspec))
                 super().feed(PLACEHOLDER)
 
     def result(self) -> Tag:
