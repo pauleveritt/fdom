@@ -138,7 +138,7 @@ class VDOMCompiler(BaseCompiler):
             case Tag(Interpolation() as i, _, _):
                 # interpolate getvalue() for the tagname - assume vdom checks as valid when rendered
                 self.add_line(level, f"vdom(")
-                self.add_line(level + 1, f"args[{i.index}][0](), ")
+                self.add_line(level + 1, f"args[{i.index}].getvalue(), ")
             case Tag(None, _, _):
                 pass
             case Tag(str() as name, _, _):
@@ -149,7 +149,7 @@ class VDOMCompiler(BaseCompiler):
         # attrs
         match tag:
             case Tag(_, Interpolation() as i, _):
-                self.add_line(level + 1, f"args[{i.index}][0](), ")
+                self.add_line(level + 1, f"args[{i.index}].getvalue(), ")
             case Tag(_, dict() as d):
                 self.add_line(level + 1, f"{d!r}, ")
 
@@ -163,7 +163,7 @@ class VDOMCompiler(BaseCompiler):
                 case Interpolation() as i:
                     # implicit recursive case - calling this interpolation will result in more children
                     # should presumably do some checking
-                    self.add_line(level + 2, f"args[{i.index}][0](), ")
+                    self.add_line(level + 2, f"args[{i.index}].getvalue(), ")
                 case str() as s:
                     self.add_line(level + 2, f"{s!r}, ")
         self.add_line(level + 1, "])")
