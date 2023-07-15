@@ -30,15 +30,21 @@ class Tag:
     children: Children = field(default_factory=list)
 
 
-def make_key(*args: str | Thunk):  # Q: str or Chunk? Need return type.
+# NOTE treating Chunk and Thunk equivalent to str and tuple is WRONG - but but but it's fine for now
+# given Chunk is-a str, and Thunk is-a tuple
+# and a raw string is just a string that only requires decoding in *some* cases
+
+Chunk = str  # WRONG!!! but works for our demo purposes
+
+def make_key(*args: Chunk | Thunk) -> tuple[Chunk | tuple, ...]:
     key_args = []
     for arg in args:
         match arg:
-            case str():
+            case Chunk():
                 key_args.append(arg)
-            case Thunk() as t:  # Q: Move Thunk() out of loop?
-                key_args.append((None, None, t[2], t[3]))
-    return tuple(key_args)  # Q: Make this a namedtuple for Key?
+            case Thunk((_, _, conv, formatspec)) as t:
+                key_args.append((None, None, conv, formatspec))
+    return tuple(key_args)
 
 
 def parse_template_as_ast(*args: str | Thunk) -> Tag:
