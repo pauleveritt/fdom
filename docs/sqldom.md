@@ -1,98 +1,196 @@
+# SQLDOM
+
+A big pile of "science fiction" describing how a fine-grained-change build system might be built around a SQL model.
+
 # Simple Approach
 
 Let's go through a bunch of scenarios with a very simple, naive version of the system.
-Even though it's naive, some parts (such as sync with build directory) are big improvement over current approaches.
 
-Let's write a catalog of all the kinds of changes an fdom  system might see.
-For each change, we'll describe how the system might react, along with
-implementation notes.
+We'll catalog some of the kinds of changes a SQLDOM system might see. For each change, we'll describe how the system
+might react, along with implementation notes.
 
-We'll start with the almost-nothing kind of change.
-Things will get very complicated, quickly, so we'll build things up one step at
-a time.
+We'll start with the almost-nothing kind of change. Things will get very complicated, quickly, so we'll build things up
+one step at a time.
 
 ## Startup, empty everything
 
 You have a directory in `content`. It has no files in it.
 
-You run a script. It generates a directory `build` with no files in it.
+You run a script. It generates a directory `build` with no files in it. But it also creates a sqlite file in a `var`
+directory. This file has some tables. For now, it just has a `Sources` table.
 
 ## Full build, one input document
 
 You have `content/a.txt` and no `build` directory. You run a build. It copies
 the input document to `output/a.txt`.
 
-## Incremental, one input document
+The system scans the `content` directory and produces a batch of "changes":
+
+```json5
+[
+  {
+    "path": "a.txt",
+    "hash": "X3A234"
+  }
+]
+```
+
+After processing, the sources table now looks like this:
+
+```json5
+[
+  {
+    "path": "a.txt",
+    "hash": "X3A234",
+    content: "Hello World"
+  }
+]
+```
+
+The `build` directory:
+
+```shell
+$ ls build
+a.txt
+```
+
+## Incremental, one unchanged input document
 
 You have `content/a.txt` and no `build` directory. You run a build. It detects
 that nothing has changed and the `build` directory is in sync. Thus, nothing
 happens and a message is logged with the number of unchanged documents.
 
 - Something needs to save some state between runs
-- Let's say there's a `var` directory
+- That's the `sources` table
 - It has some mapping of paths to hashes
 - The build discovers `a.txt`, hashes the contents, and checks the cache
 - The cache knows about `a.txt` and says that it matches previous hash
 
+When the run happens, the build system "diffs" the `content` directory and the `sources` table and determines these are
+the changes:
+
+```json5
+{}
+```
+
+Nothing changed. It's the same files on disk with the same hashes, as compared to the `sources` table.
+
+The build system then needs to do a similar "diff" with the `build` directory. Thus, a `build` table:
+
+```json5
+[
+  {
+    "path": "a.txt",
+    "hash": "QZ234A",
+    "content": "Hello"
+  }
+]
+```
+
+This table contains the final content as it should appear on disk -- currently, the same as the input. If the build
+directory already has a file for that row, and the hash matches, nothing needs to be written.
+
+Again, it's like rsync on the output. The authoritative final copy of ALL build artifacts are in the database. The
+filesystem is just a mirror. If the filesystem copies get tampered with, the build system will notice.
+
 ## Change one input document
 
-You have `content/a.txt` and `build/a.txt`. You also have `var` which knows the
-hash from the last build.
+You have `content/a.txt` and `build/a.txt`. You also have database which knows the
+hash from the last build -- for the inputs *and* the *outputs*.
 
 You edit `content/a.txt` and change it, then run a build. It finds one file
 at `content/a.txt`, takes the hash, and checks the cache. It's changed, so the
 build copies the content to `build/a.txt` and updates the cache.
 
+The changes:
+
+```json5
+{
+  "edits": [
+    {
+      "path": "a.txt",
+      "hash": "QZ234A"
+    }
+  ]
+}
+```
+
+The `sources` table now has:
+
+```json5
+[
+  {
+    "path": "a.txt",
+    "hash": "QZ234A",
+    content: "Hello World"
+  }
+]
+```
+
+And finally, the `build` table:
+
+```json5
+[
+  {
+    "path": "a.txt",
+    "hash": "QZ234A",
+    "content": "Hello"
+  }
+]
+```
+
 ## Server watch, one input document
 
-You then run the build in watch mode. It starts up, scans `content`, checks the
-cache, and sees nothing has changed. Nothing gets copied.
+You then run the build in watch mode. It starts up, scans `content`, checks the cache, and sees nothing has changed.
+Same as before: a "diff" between the `content` directory and the `sources` table.
 
 You change `content/a.txt`. The watcher sees a file has changed. It takes the
 hash, checks the cache. Sees it is out of date. Updates the cache and copies to
 output.
 
-- It is possible in the mode to skip the hash...you know it has changed
-- But you'll need the hash anyway
-- Thus, it is key to have a performant hash function
-
 ## Delete one input document
 
-You delete `content/a.txt` and run the build. It collects all the paths
-under `content` and their hashes. It then compares with the cache and sees that
-there used to be something at `a.txt`.
+You delete `content/a.txt` and run the build. It collects all the paths under `content` and their hashes. The build then
+does the "diff" against `sources` and determines the changeset:
 
-The build deletes it from the cache and deletes it from `build/a.txt`.
+```json5
+{
+  "delete": [
+    {
+      "path": "a.txt",
+    }
+  ]
+}
+```
 
-## Modify built file
+The `sources` table is now empty:
 
-You edit `build/a.txt` and run the build. The correct version
-of `build/a.txt` does not appear. You change the cache to track hashes
-of `build`. Each path in the cache has input and output hashes.
+```json5
+[]
+```
 
-You edit `content/a.txt` and run the build. It updates `output/a.txt` *and*
-stores the hash of output file.
+As is the `build` table:
 
-You again edit `build/a.txt` and run the build. This time it knows the output
-is out-of-sync and copies the input to the output.
+```json5
+[]
+```
 
-You run the build again. Nothing has changed in `content` or `build` so no
-actions taken.
+Because the build table is empty, the `build/a.txt` needs to be deleted to match the `build` table. The "diff" does
+this.
 
-Instead of modifying `build/a.txt` you delete it. When you run the build, it
-detects the missing path, then writes the file and stores the hash.
+## Add one Markdown document with title
 
-## Add one HTML document with title
+You add a file `content/b.md` as a valid Markdown file, with a title. You run the
+build. It sees that `a.txt` hasn't changed, but there's a new path at `b.md`.
 
-You add a file `content/b.html` as a valid HTML file, with a title. You run the
-build. It sees that `a.txt` hasn't changed, but there's a new path at `b.html`.
-
-This time it runs two Python functions. `parse_html` extracts the `title` and
-the `body`. `write_html` then puts a `title` and a `body` into a full HTML
+This time it runs two Python functions. `parse_markdown` extracts the `title` and
+the `body`. `write_markdown` then puts a `title` and a `body` into a full HTML
 document.
 
 The build records the hash in the cache and writes the new HTML document
 to `output/b.html`.
+
+- Build phases
 
 ## Change parse function
 
@@ -174,3 +272,14 @@ script. The link entry gets removed and there is no error.
 You put `content/a.txt` back, edit `content/b.html` to put back in the link,
 and run the build. Everything is back to normal.
 
+Notes:
+
+- Database-driven
+- Resources
+- Build phases
+- Dependencies
+- Config files and changes
+- Data cascade
+- Images
+- Themes
+- Markdown sequences
