@@ -12,22 +12,18 @@ from fdom.thunky import Chunk, Thunk, convert_to_proposed_scheme
 # AST model
 # FIXME add constraints to this model to capture <{tag}>...</{tag}>, it must be equal
 
-
 class Interpolation(NamedTuple):
     index: int  # index into the *args
     conv: str | None
     formatspec: str | None
 
-
-Children = list[str, "Tag", Interpolation]
-Attrs = dict[str, Any]
-
+E = list[str, Interpolation]
 
 @dataclass
 class Tag:
-    tagname: str | Interpolation = None
-    attrs: Attrs | Interpolation = field(default_factory=dict)
-    children: Children = field(default_factory=list)
+    tagname: E = None
+    attrs: list[tuple[E, E | None]] = field(default_factory=list)
+    children: list[str, Interpolation, "Tag"] = field(default_factory=list)
 
 
 # "normalize" thunks such that they are suitable for keys,
@@ -57,6 +53,10 @@ def parse_template_as_ast(*args: Chunk | Thunk) -> Tag:
         parser.feed(i, arg)
     return parser.result()
 
+
+def as_ast(*args: Chunk | Thunk) -> Tag:
+    args = convert_to_proposed_scheme(*args)
+    return parse_template_as_ast(*make_key(*args))
 
 # generalize the below so that it build out tag functions that combine
 # caching, compiler, and "runtime" (vdom, etc)
@@ -124,7 +124,7 @@ class BaseCompiler:
         code_obj = compile(self.code, "<string>", "exec")
         captured = {}
         exec(code_obj, captured)
-        return captured["compiled"]
+        return captured[self.name]
 
 
 class VDOMCompiler(BaseCompiler):
@@ -184,6 +184,14 @@ def unescape_placeholder(string: str) -> str:
     return string.replace("$$", "$")
 
 
+def is_string_tag(tagname: E) -> bool:
+    match tagname:
+        case [str]:
+            return True
+        case _:
+            return False
+
+
 class ASTParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -192,17 +200,18 @@ class ASTParser(HTMLParser):
         self.interpolations: deque[Interpolation] = deque()
 
     def feed(self, index: int, data: Chunk | KeyThunk) -> None:
+        print(f'feed {index=}: {data=}')
         match data:
             case Chunk() as c:
                 super().feed(escape_placeholder(c.decoded))
             case KeyThunk() as t:
                 self.interpolations.append(Interpolation(index, t.conv, t.formatspec))
+                print(f'feed: {self.interpolations=}')
                 super().feed(PLACEHOLDER)
 
     def result(self) -> Tag:
-        root = self.root
         self.close()
-        match root.children:
+        match self.root.children:
             case []:
                 raise ValueError("Nothing to return")
             case [child]:
@@ -210,58 +219,55 @@ class ASTParser(HTMLParser):
             case _:
                 return self.root
 
+    def expand_interpolations(self, s: str | None) -> E | None:
+        if s is None:
+            return None
+        elif s == PLACEHOLDER:
+            return [self.interpolations.popleft()]
+
+        expanded = []
+        split = s.split(PLACEHOLDER)
+        print(f'expand {s=}, {split=}, {self.interpolations=}')
+        for i, item in enumerate(split):
+            if item == '':
+                expanded.append(self.interpolations.popleft())
+            else:
+                expanded.append(unescape_placeholder(item))
+                if i != len(split) - 1:
+                    expanded.append(self.interpolations.popleft())
+        print(f'{expanded=}')
+        return expanded
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == PLACEHOLDER:
-            tag = self.interpolations.popleft()
-
-        node_attrs = {}
+        print(f'handle_starttag {tag=}, {attrs=}')
+        expanded_tagname = self.expand_interpolations(tag)
+        expanded_attrs = []
         for k, v in attrs:
-            if k == PLACEHOLDER and v is None:
-                node_attrs = self.interpolations.popleft()
-            elif PLACEHOLDER in k:
-                raise SyntaxError("Cannot interpolate attribute names")
-            elif v == PLACEHOLDER:
-                node_attrs[k] = self.interpolations.popleft()
+            expanded_attrs.append((self.expand_interpolations(k), self.expand_interpolations(v)))
 
-        # At this point all interpolated values should have been consumed.
-        # assert not self.interpolations, "Did not interpolate all values"
+        # At this point all interpolated values should have been consumed, and therefore a bug in this class.
+        assert not self.interpolations, "Did not interpolate all values"
 
-        this_node = Tag(tag, node_attrs)
+        this_node = Tag(expanded_tagname, expanded_attrs)
+        print(f'{this_node=}')
         last_node = self.stack[-1]
         last_node.children.append(this_node)
         self.stack.append(this_node)
 
     def handle_data(self, data: str) -> None:
         children = self.stack[-1].children
-        if data == PLACEHOLDER:
-            parts = [data]
-        else:
-            parts = data.split(PLACEHOLDER)
-
-        for part in parts:
-            if part == "" or part == PLACEHOLDER:
-                children.append(self.interpolations.popleft())
-            else:
-                children.append(part)
+        children.extend(self.expand_interpolations(data))
 
     def handle_endtag(self, tag: str) -> None:
         node = self.stack.pop()
+        expanded_tagname = self.expand_interpolations(tag)
 
-        # FIXME should also handle a tag with a placeholder in it, similar to handle_data
+        if is_string_tag(expanded_tagname) and is_string_tag(node.tagname):
+            if expanded_tagname != node.tagname:
+                raise ValueError(f'Start tag {node.tagname[0]!r} does not match end tag {expanded_tagname[0]!r}')
+        # FIXME otherwise handle as a constraint - this needs to be added to the parsed result
 
-        if tag == PLACEHOLDER:
-            # this should add a constraint to the returned AST such that these two placeholders must equal
-            self.interpolations.popleft()
-            return None
-
-        # At this point all interpolated values should have been consumed.
-        # assert not self.values, "Did not interpolate all values"
-
-        if tag is ...:
-            # handle end tag shorthand
-            return None
-
-        if tag != node.tagname:
-            raise SyntaxError(
-                "Start tag {node.tag!r} does not match end tag {interp_tag!r}"
-            )
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        # handle specially because the starttag had previously done all expansions, so no need to repeat
+        self.handle_starttag(tag, attrs)
+        self.handlenode = self.stack.pop()
