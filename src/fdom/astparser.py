@@ -34,6 +34,9 @@ class Interpolation(NamedTuple):
     conv: str | None
     formatspec: str | None
 
+
+# FIXME there must be a better name for this. Elements? Expando?
+
 E = list[str, Interpolation]
 
 @dataclass
@@ -91,7 +94,7 @@ def unescape_placeholder(string: str) -> str:
     return string.replace('$$', '$')
 
 
-def is_string_tag(tagname: E) -> bool:
+def is_static_element(tagname: E) -> bool:
     match tagname:
         case [str()]:
             return True
@@ -163,7 +166,7 @@ class ASTParser(HTMLParser):
         node = self.stack.pop()
         expanded_tagname = self.expand_interpolations(tag)
 
-        if is_string_tag(expanded_tagname) and is_string_tag(node.tagname):
+        if is_static_element(expanded_tagname) and is_static_element(node.tagname):
             if expanded_tagname != node.tagname:
                 raise ValueError(f'Start tag {node.tagname[0]!r} does not match end tag {expanded_tagname[0]!r}')
         # FIXME otherwise handle as a constraint - this needs to be added to the parsed result
