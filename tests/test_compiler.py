@@ -1,6 +1,6 @@
 from tagstr import Thunk
 
-from fdom.compiler import make_key, ASTParser, escape_placeholder, unescape_placeholder, vdom, BaseCompiler
+from fdom.basecompiler import make_key, ASTParser, escape_placeholder, unescape_placeholder, vdom, BaseCompiler
 
 
 def test_make_key_single_string():

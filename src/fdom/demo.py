@@ -1,4 +1,4 @@
-from fdom.compiler import html
+from fdom.basecompiler import html
 
 
 def demo():

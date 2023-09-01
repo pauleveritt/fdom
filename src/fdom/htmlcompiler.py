@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from html import escape
+from typing import Callable
 
 from fdom.astparser import E, Interpolation, Tag, is_static_element
 from fdom.basecompiler import BaseCompiler
@@ -12,7 +13,7 @@ class HTML:
 
 
 class HTMLGeneratorMixin(HTML):
-    def __init__(self, *args):
+    def __init__(self, args):
         self.args = args
         # initialize other state
 
@@ -23,11 +24,18 @@ class HTMLGeneratorMixin(HTML):
             case str():
                 return escape(s)
 
-    def get_tagname_from_builder(self, builder):
+    def get_tagname_from_builder(self, *builder):
         # FIXME need to sanitize input here
         return f'<{"".join(builder)}'
 
-    def get_attrs(self, *args):
+    def get_end_tagname_from_builder(self, *builder):
+        # FIXME need to sanitize input here
+        return f'</{"".join(builder)}>'
+
+    def get_attrs_dict(self, *args):
+        pass
+
+    def get_key_value(self):
         pass
 
     # need to consider formatting
@@ -72,10 +80,10 @@ class HTMLCompiler(BaseCompiler):
         self.yield_block = []
         self.preamble = \
             f"""
-class CompiledHTML(HTMLGeneratorMixin):
-  def __iter__(self):
+def __iter__(self):
     _args = self.args
     _get_tagname = self.get_tagname_from_builder
+    _get_end_tagname = self.get_end_tagname_from_builder
     _get_attrs_dict = self.get_attrs_dict
     _get_key_value = self.get_key_value
     _escape = self.html_escape
@@ -83,6 +91,12 @@ class CompiledHTML(HTMLGeneratorMixin):
     # FIXME add missing runtime methods, plus additional localization
 """
         super().__init__()
+        self.name = '__iter__'
+
+    def __call__(self, tag: Tag) -> Callable:
+        # FIXME this is not very clear how this is working!
+        code = super().__call__(tag)
+        return type('TemplateRenderer', (HTMLGeneratorMixin,), {'__iter__': code})
 
     def add_yield_string(self, s: str):
         # enables coalescing static lines of text together in one yield
@@ -90,7 +104,7 @@ class CompiledHTML(HTMLGeneratorMixin):
 
     def add_interpolation(self, i: Interpolation) -> str:
         local_var = f'_arg{i.index}'
-        self.add_line(f'{local_var} = format(_args[{i.index}].getvalue(), {i.formatspec})')
+        self.add_line(f'{local_var} = format(_args[{i.index}].getvalue(), {""})')
         return local_var
 
     def add_line(self, line: str):
