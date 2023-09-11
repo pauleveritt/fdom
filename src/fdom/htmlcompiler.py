@@ -59,7 +59,6 @@ class HTMLRuntimeMixin(HTML):
 
     def get_key_value(self, k: str, v: Any) -> str:
         # FIXME need to consider invalid keys
-        print(f'{k=}, {type(k)=}: {v=}, {type(v)=}')
         match k, v:
             # Only show boolean keys if True
             case _, True:
@@ -109,16 +108,6 @@ class HTMLCompiler(BaseCompiler):
         self.preamble = \
             f"""
 def __iter__(self):
-    _args = self.args
-
-    _convert = self.convert
-    _format = format
-    _recursive_escape = self.recursive_escape
-
-    _get_tagname = self.get_tagname
-    _get_end_tagname = self.get_end_tagname
-    _get_attrs_dict = self.get_attrs_dict
-    _get_key_value = self.get_key_value
 """
         super().__init__()
         self.name = '__iter__'
@@ -137,10 +126,10 @@ def __iter__(self):
         formatspec = '' if i.formatspec is None else i.formatspec
         if i.conv is None:
             self.add_line(
-                f'{local_var} = _format(_args[{i.index}].getvalue(), {formatspec!r})')
+                f'{local_var} = format(self.args[{i.index}].getvalue(), {formatspec!r})')
         else:
             self.add_line(
-                f'{local_var} = _format(_convert(_args[{i.index}].getvalue(), {i.conv!r}), {formatspec!r})')
+                f'{local_var} = format(self.convert(self.args[{i.index}].getvalue(), {i.conv!r}), {formatspec!r})')
         return local_var
 
     def add_line(self, line: str):
@@ -170,7 +159,7 @@ def __iter__(self):
                 self.add_yield_string(f'<{tagname}')
             case Tag():
                 tagname_builder = self.get_name_builder(tag.tagname)
-                self.add_line(f'yield _get_tagname({tagname_builder})')
+                self.add_line(f'yield self.get_tagname({tagname_builder})')
 
         # FIXME what escaping/sanity checking is required? For now, be simplistic
         for k, v in tag.attrs:
@@ -185,14 +174,14 @@ def __iter__(self):
                 case [Interpolation() as i] if v is None:
                     self.add_yield_string(' ')
                     name_arg = self.add_interpolation(i)
-                    self.add_line(f'yield _get_attrs_dict({name_arg})')
+                    self.add_line(f'yield self.get_attrs_dict({name_arg})')
                 case _:
                     match v:
                         case None:
                             raise ValueError('Cannot resolve multiple interpolations into a dict/bool interpolation')
                         case _:
                             self.add_yield_string(' ')
-                            self.add_line(f'yield _get_key_value([{self.get_name_builder(k)}], [{self.get_name_builder(v)}])')
+                            self.add_line(f'yield self.get_key_value([{self.get_name_builder(k)}], [{self.get_name_builder(v)}])')
 
         # close the start tag
         self.add_yield_string('>\n')
@@ -203,13 +192,13 @@ def __iter__(self):
                 case str():
                     self.add_yield_string(escape(child))
                 case Interpolation() as i:
-                    self.add_line(f'yield _recursive_escape({self.add_interpolation(i)})')
+                    self.add_line(f'yield self.recursive_escape({self.add_interpolation(i)})')
                 case Tag() as t:
                     self.compile(t, level + 1)
 
         # end the tag
         if tagname is None:
-            self.add_line(f'yield _get_end_tagname({tagname_builder})')
+            self.add_line(f'yield self.get_end_tagname({tagname_builder})')
         else:
             self.add_yield_string(f'</{tagname}>\n')
 
