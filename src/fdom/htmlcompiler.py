@@ -172,7 +172,6 @@ def __iter__(self):
                 tagname_builder = self.get_name_builder(tag.tagname)
                 self.add_line(f'yield _get_tagname({tagname_builder})')
 
-        attrs = {}
         # FIXME what escaping/sanity checking is required? For now, be simplistic
         for k, v in tag.attrs:
             match k:
@@ -204,7 +203,7 @@ def __iter__(self):
                 case str():
                     self.add_yield_string(escape(child))
                 case Interpolation() as i:
-                    self.add_line(level, f'yield _recursive_escape({self.add_interpolation(i)})')
+                    self.add_line(f'yield _recursive_escape({self.add_interpolation(i)})')
                 case Tag() as t:
                     self.compile(t, level + 1)
 

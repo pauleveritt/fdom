@@ -53,7 +53,7 @@ class BaseCompiler:
 
     def __call__(self, tag: Tag) -> Callable:
         self.compile(tag)
-        # print("Compiled code:\n", self.code)
+        print("Compiled code:\n", self.code)
 
         # standard boilerplate to compile a string into a callable
         code_obj = compile(self.code, "<string>", "exec")
