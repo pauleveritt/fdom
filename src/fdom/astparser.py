@@ -102,6 +102,17 @@ def is_static_element(tagname: E) -> bool:
             return False
 
 
+# Per the docs on HTMLParser:
+#
+# "This parser does not check that end tags match start tags or call the
+# end-tag handler for elements which are closed implicitly by closing an
+# outer element."
+#
+# Currently this checking is only done on static tag names, that is
+# they do not contain interpolations. If they do contain interpolations,
+# this would have to be done as constraints that are checked when
+# rendering the template.
+
 class ASTParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -172,6 +183,7 @@ class ASTParser(HTMLParser):
         # FIXME otherwise handle as a constraint - this needs to be added to the parsed result
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        # handle specially because the starttag had previously done all expansions, so no need to repeat
+        # Handle specially because the starttag had previously done all expansions,
+        # so there's no need to repeat
         self.handle_starttag(tag, attrs)
-        self.handlenode = self.stack.pop()
+        self.stack.pop()

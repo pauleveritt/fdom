@@ -1,58 +1,73 @@
+from abc import abstractmethod
 from collections.abc import Generator
 from html import escape
-from typing import Callable
+from typing import Any, Callable
 
 from fdom.astparser import E, Interpolation, Tag, is_static_element
 from fdom.basecompiler import BaseCompiler
-from fdom.taglib import Chunk, Thunk
+from fdom.taglib import Chunk, Conversion, Thunk
 
 
 class HTML:
     """Marker class for HTML content"""
-    pass
+    @abstractmethod
+    def __iter__(self):
+        ...
 
 
-class HTMLGeneratorMixin(HTML):
-    def __init__(self, args):
+class HTMLRuntimeMixin(HTML):
+    def __init__(self, args: list[Chunk | Thunk]):
         self.args = args
-        # initialize other state
+        self.marker_class = HTML
 
-    def convert(self, s, conv):
+    def convert(self, obj: Any, conv: Conversion) -> str:
         match conv:
             case 'a':
-                return ascii(s)
+                return ascii(obj)
             case 'r':
-                return repr(s)
+                return repr(obj)
             case 's' | None:
-                return str(s)
+                return str(obj)
 
     # NOTE there is a subtle distinction here between
     # - compile time: html.escape
-    # - run time: recursive_escape, which takes in account the HTML marker
-    def recursive_escape(self, s):
+    # - run time: recursive_escape, which takes in account the HTML
+    #   marker
+
+    def recursive_escape(self, s: str | HTML):
         match s:
             case HTML():
-                return s
+                yield from s
             case str():
                 return escape(s)
+            case _:
+                raise ValueError(f'Expected a string or HTML, not {type(s)}')
 
     def get_tagname(self, *builder):
         # FIXME raise ValueError if a dynamic tagname results in an
         # invalid name, but first determine what are invalid tagnames
         # from an appropriate RFC
-        return f'<{"".join(builder)}'
 
-    def get_end_tagname(self, *builder):
+        # NOTE the quoting here - builder can be made up of
+        # single-quoted strings (because of the use of repr) or variable
+        # names
+        return f"<{''.join(builder)}"
+
+    def get_end_tagname(self, *builder: str):
         # FIXME ditto
-        return f'</{"".join(builder)}>'
+        return f"</{''.join(builder)}>"
 
-    def get_key_value(self, k, v) -> str:
+    def get_key_value(self, k: str, v: Any) -> str:
         # FIXME need to consider invalid keys
+        print(f'{k=}, {type(k)=}: {v=}, {type(v)=}')
         match k, v:
-            case _, bool() if v:
+            # Only show boolean keys if True
+            case _, True:
                 return str(k)
-            # FIXME are there other attributes that use this approach?
-            # also we may want to support this formatting with the
+            case _, False:
+                return None
+            # FIXME are there other HTML attributes that use this formatting?
+            # Also we may want to support this formatting with the
             # formatspec, such as for custom elements
             case 'style', dict() as d:
                 styling_list = []
@@ -61,30 +76,33 @@ class HTMLGeneratorMixin(HTML):
                 styling = escape('; '.join(styling_list), quote=True)
                 return f'{k}="{styling}"'
             case _, _:
-                quoted_v = escape(v, quote=True)
+                quoted_v = escape(str(v), quote=True)
                 return f'{k}="{quoted_v}"'
 
-    def get_attrs_dict(self, i: Interpolation):
+    def get_attrs_dict(self, value: Any):
         attrs = []
-        match arg := self.args[i.index]:
+        match value:
             case dict() as d:
                 for k, v in d.items():
-                    attrs.append(self.get_key_value(k, v))
+                    setting = self.get_key_value(k, v)
+                    if setting is not None:
+                        attrs.append(setting)
+                return ' '.join(attrs)
             case _:
                 raise ValueError('Attributes must be a dict')
 
 
 class HTMLCompiler(BaseCompiler):
-    # Optimized for WSGI consumption, so returns a generator, in a codegenerated
-    # __iter__ method.
+    # Optimized for WSGI consumption, so returns a generator, in a
+    # code-generated __iter__ method.
 
-    # Given that functionality could also capture a lot of information on any
-    # interpolations, so as to simplify that, let's make it a subclass on a
-    # passed-in class, constructing with type.
+    # Given that functionality could also capture a lot of information
+    # on any interpolations, so as to simplify that, let's make it a
+    # subclass on a passed-in class, constructing with type.
 
-    # NOTE it should be straightforward to construct from this example such
-    # variants as one that supports ASGI or is eager and returns a single block
-    # of text.
+    # NOTE it should be straightforward to construct from this example
+    # such variants as one that supports ASGI or is eager and returns a
+    # single block of text.
 
     def __init__(self, indent=2):
         self.yield_block = []
@@ -106,12 +124,12 @@ def __iter__(self):
         self.name = '__iter__'
 
     def __call__(self, tag: Tag) -> Callable:
-        # FIXME this is not very clear how this is working!
         code = super().__call__(tag)
-        return type('TemplateRenderer', (HTMLGeneratorMixin,), {'__iter__': code})
+        return type('TemplateRenderer', (HTMLRuntimeMixin,), {'__iter__': code})
 
     def add_yield_string(self, s: str):
-        # enables coalescing static lines of text together in one yield
+        # NOTE enables coalescing static lines of text together in one
+        # yield
         self.yield_block.append(s)
 
     def add_interpolation(self, i: Interpolation) -> str:
@@ -167,7 +185,8 @@ def __iter__(self):
                             self.add_yield_string(f' {k[0]}')
                 case [Interpolation() as i] if v is None:
                     self.add_yield_string(' ')
-                    self.add_line(f'yield _get_attrs_dict({i.index})')
+                    name_arg = self.add_interpolation(i)
+                    self.add_line(f'yield _get_attrs_dict({name_arg})')
                 case _:
                     match v:
                         case None:
