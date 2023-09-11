@@ -142,17 +142,26 @@ class ASTParser(HTMLParser):
         if s is None:
             return None
         elif s == PLACEHOLDER:
+            print(f'Expand simple placeholder {s=}, {self.interpolations=}')
             return [self.interpolations.popleft()]
+        elif s.split(PLACEHOLDER) == [s]:
+            print(f'No placeholder in {s=}')
+            return [unescape_placeholder(s)]
 
         expanded = []
         split = s.split(PLACEHOLDER)
+        len_split = len(split)
+
+        if split == [''] * len_split:
+            split = split[:-1]
+
+        print(f'Expand complex placeholder {s=}, {split=} {self.interpolations=}')
         for i, item in enumerate(split):
-            if item == '':
-                expanded.append(self.interpolations.popleft())
-            else:
-                expanded.append(unescape_placeholder(item))
-                if i != len(split) - 1:
+            match item:
+                case '':
                     expanded.append(self.interpolations.popleft())
+                case _:
+                   expanded.append(unescape_placeholder(item))
         return expanded
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
