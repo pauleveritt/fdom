@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Literal, NamedTuple
 
-from fdom.thunky import Chunk, Thunk, convert_to_proposed_scheme
+from fdom.taglib import Chunk, Thunk, convert_to_proposed_scheme
 
 """
 Supports parsing HTML templates with interpolations that can be arbitrarily placed:

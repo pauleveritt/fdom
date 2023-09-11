@@ -4,7 +4,7 @@ from typing import Callable
 
 from fdom.astparser import E, Interpolation, Tag, is_static_element
 from fdom.basecompiler import BaseCompiler
-from fdom.thunky import Chunk, Thunk
+from fdom.taglib import Chunk, Thunk
 
 
 class HTML:
@@ -17,49 +17,61 @@ class HTMLGeneratorMixin(HTML):
         self.args = args
         # initialize other state
 
-    def html_escape(self, s):
+    def convert(self, s, conv):
+        match conv:
+            case 'a':
+                return ascii(s)
+            case 'r':
+                return repr(s)
+            case 's' | None:
+                return str(s)
+
+    # NOTE there is a subtle distinction here between
+    # - compile time: html.escape
+    # - run time: recursive_escape, which takes in account the HTML marker
+    def recursive_escape(self, s):
         match s:
             case HTML():
                 return s
             case str():
                 return escape(s)
 
-    def get_tagname_from_builder(self, *builder):
-        # FIXME need to sanitize input here
+    def get_tagname(self, *builder):
+        # FIXME raise ValueError if a dynamic tagname results in an
+        # invalid name, but first determine what are invalid tagnames
+        # from an appropriate RFC
         return f'<{"".join(builder)}'
 
-    def get_end_tagname_from_builder(self, *builder):
-        # FIXME need to sanitize input here
+    def get_end_tagname(self, *builder):
+        # FIXME ditto
         return f'</{"".join(builder)}>'
 
-    def get_attrs_dict(self, *args):
-        pass
+    def get_key_value(self, k, v) -> str:
+        # FIXME need to consider invalid keys
+        match k, v:
+            case _, bool() if v:
+                return str(k)
+            # FIXME are there other attributes that use this approach?
+            # also we may want to support this formatting with the
+            # formatspec, such as for custom elements
+            case 'style', dict() as d:
+                styling_list = []
+                for sub_k, sub_v in d.items():
+                    styling_list.append(f'{sub_k}: {sub_v}')
+                styling = escape('; '.join(styling_list), quote=True)
+                return f'{k}="{styling}"'
+            case _, _:
+                quoted_v = escape(v, quote=True)
+                return f'{k}="{quoted_v}"'
 
-    def get_key_value(self):
-        pass
-
-    # need to consider formatting
-    # for tags, data, honor the formatspec - but check if a valid tag
-    # for attributes, guess with respect to placement - style, boolean tags like disabled
-    # yield as soon as possible
-
-    # def get_data(self, *args):
-    #     for arg in args:
-    #         match arg:
-    #             case Chunk() as s:
-    #                 yield s.decoded.encode('utf-8')
-    #             case Thunk() as t:
-    #                 value = t.getvalue()
-    #                 match value:
-    #                     case HTML():
-    #                         yield from value
-    #                     case Generator():
-    #                         for v in value:
-    #                             yield self.escape(v)
-
-
-    #                 if isinstance(value, Generator):
-    #                     yield
+    def get_attrs_dict(self, i: Interpolation):
+        attrs = []
+        match arg := self.args[i.index]:
+            case dict() as d:
+                for k, v in d.items():
+                    attrs.append(self.get_key_value(k, v))
+            case _:
+                raise ValueError('Attributes must be a dict')
 
 
 class HTMLCompiler(BaseCompiler):
@@ -70,11 +82,9 @@ class HTMLCompiler(BaseCompiler):
     # interpolations, so as to simplify that, let's make it a subclass on a
     # passed-in class, constructing with type.
 
-    # It should be straightforward to construct an ASGI variant, or conversely
-    # one that is eager and returns a single block of text.
-
-    # FIXME use type() constructor instead of hardcoding with respect to a name
-    # (HTMLGeneratorMixin)
+    # NOTE it should be straightforward to construct from this example such
+    # variants as one that supports ASGI or is eager and returns a single block
+    # of text.
 
     def __init__(self, indent=2):
         self.yield_block = []
@@ -82,13 +92,15 @@ class HTMLCompiler(BaseCompiler):
             f"""
 def __iter__(self):
     _args = self.args
-    _get_tagname = self.get_tagname_from_builder
-    _get_end_tagname = self.get_end_tagname_from_builder
+
+    _convert = self.convert
+    _format = format
+    _recursive_escape = self.recursive_escape
+
+    _get_tagname = self.get_tagname
+    _get_end_tagname = self.get_end_tagname
     _get_attrs_dict = self.get_attrs_dict
     _get_key_value = self.get_key_value
-    _escape = self.html_escape
-
-    # FIXME add missing runtime methods, plus additional localization
 """
         super().__init__()
         self.name = '__iter__'
@@ -104,7 +116,13 @@ def __iter__(self):
 
     def add_interpolation(self, i: Interpolation) -> str:
         local_var = f'_arg{i.index}'
-        self.add_line(f'{local_var} = format(_args[{i.index}].getvalue(), {""})')
+        formatspec = '' if i.formatspec is None else i.formatspec
+        if i.conv is None:
+            self.add_line(
+                f'{local_var} = _format(_args[{i.index}].getvalue(), {formatspec!r})')
+        else:
+            self.add_line(
+                f'{local_var} = _format(_convert(_args[{i.index}].getvalue(), {i.conv!r}), {formatspec!r})')
         return local_var
 
     def add_line(self, line: str):
@@ -167,10 +185,7 @@ def __iter__(self):
                 case str():
                     self.add_yield_string(escape(child))
                 case Interpolation() as i:
-                    # NOTE there is a subtle distinction here between
-                    # - compile time: html.escape
-                    # - run time: _escape, which takes in account the HTML marker
-                    self.add_line(level, f'yield _escape({self.add_interpolation(i)})')
+                    self.add_line(level, f'yield _recursive_escape({self.add_interpolation(i)})')
                 case Tag() as t:
                     self.compile(t, level + 1)
 

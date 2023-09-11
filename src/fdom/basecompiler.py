@@ -3,7 +3,7 @@ from textwrap import dedent
 from typing import Callable
 
 from fdom.astparser import make_key, parse_keyed_template_as_ast, Tag
-from fdom.thunky import Chunk, Thunk, convert_to_proposed_scheme
+from fdom.taglib import Chunk, Thunk, convert_to_proposed_scheme
 
 # FIXME make this a decorator, so that it can be applied more generally
 
@@ -53,7 +53,7 @@ class BaseCompiler:
 
     def __call__(self, tag: Tag) -> Callable:
         self.compile(tag)
-        print("Compiled code:\n", self.code)
+        # print("Compiled code:\n", self.code)
 
         # standard boilerplate to compile a string into a callable
         code_obj = compile(self.code, "<string>", "exec")
