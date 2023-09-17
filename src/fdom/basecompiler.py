@@ -5,6 +5,7 @@ from typing import Callable
 from fdom.astparser import make_key, parse_keyed_template_as_ast, Tag
 from fdom.taglib import Chunk, Thunk, convert_to_proposed_scheme
 
+
 # FIXME make this a decorator, so that it can be applied more generally
 
 @lru_cache

@@ -33,15 +33,17 @@ class HTMLRuntimeMixin(HTML):
     # - compile time: html.escape
     # - run time: recursive_escape, which takes in account the HTML
     #   marker
+    # There's probably a better name for this method to make it
+    # easier to understand what it does!
 
     def recursive_escape(self, s: str | HTML):
         match s:
             case HTML():
                 yield from s
             case str():
-                return escape(s)
+                yield escape(s)
             case _:
-                raise ValueError(f'Expected a string or HTML, not {type(s)}')
+                raise ValueError(f'Expected a string or HTML, not {type(s)!r}')
 
     def get_tagname(self, *builder):
         # FIXME raise ValueError if a dynamic tagname results in an
@@ -88,7 +90,7 @@ class HTMLRuntimeMixin(HTML):
                         attrs.append(setting)
                 return ' '.join(attrs)
             case _:
-                raise ValueError('Attributes must be a dict')
+                raise ValueError(f'Attributes must be a dict, not {type(value)!r}')
 
 
 class HTMLCompiler(BaseCompiler):
@@ -192,7 +194,7 @@ def __iter__(self):
                 case str():
                     self.add_yield_string(escape(child))
                 case Interpolation() as i:
-                    self.add_line(f'yield self.recursive_escape({self.add_interpolation(i)})')
+                    self.add_line(f'yield from self.recursive_escape({self.add_interpolation(i)})')
                 case Tag() as t:
                     self.compile(t, level + 1)
 
