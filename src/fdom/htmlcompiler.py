@@ -22,7 +22,7 @@ class HTML(str):
 class HTMLRuntimeMixin(HTMLIterator):
     def __init__(self, args: list[Chunk | Thunk]):
         self.args = args
-        self.marker_class = HTMLIterator
+        self.marker = HTML
 
     def convert(self, obj: Any, conv: Conversion) -> str:
         match conv:
@@ -33,12 +33,7 @@ class HTMLRuntimeMixin(HTMLIterator):
             case 's' | None:
                 return str(obj)
 
-    def getvalue(self, index: int):
-        # FIXME handle conversions with conv
-        arg = self.args[index]
-        value = arg.getvalue()
-        fspec = '' if arg.formatspec is None else arg.formatspec
-        print(f'{arg=}, {value=}, {type(value)=}')
+    def unpack_value(self, value, fspec) -> Iterable[HTML]:
         match value:
             case HTML():
                 yield value
@@ -46,15 +41,16 @@ class HTMLRuntimeMixin(HTMLIterator):
                 yield HTML(escape(format(value, fspec)))
             case Iterable():
                 for elem in value:
-                    match elem:
-                        case HTML():
-                            yield elem
-                        case str():
-                            yield HTML(escape(elem))
-                        case _:
-                            yield elem
+                    yield from self.unpack_value(elem, fspec)
             case _:
                 yield HTML(escape(format(value, fspec)))
+
+    def getvalue(self, index: int) -> Iterable[HTML]:
+        # FIXME handle conversions with conv
+        arg = self.args[index]
+        value = arg.getvalue()
+        fspec = '' if arg.formatspec is None else arg.formatspec
+        yield from self.unpack_value(value, fspec)
 
     def get_tagname(self, *builder):
         # FIXME raise ValueError if a dynamic tagname results in an
@@ -64,11 +60,11 @@ class HTMLRuntimeMixin(HTMLIterator):
         # NOTE the quoting here - builder can be made up of
         # single-quoted strings (because of the use of repr) or variable
         # names
-        return f"<{''.join(builder)}"
+        return HTML(f"<{''.join(builder)}")
 
     def get_end_tagname(self, *builder: str):
         # FIXME ditto
-        return f"</{''.join(builder)}>"
+        return HTML(f"</{''.join(builder)}>")
 
     def get_key_value(self, k: str, v: Any) -> str:
         # FIXME need to consider invalid keys
@@ -156,7 +152,7 @@ def __iter__(self):
     def add_line(self, line: str):
         if self.yield_block:
             block = ''.join(self.yield_block)
-            self.lines.append(f'    yield """{block}"""')
+            self.lines.append(f'    yield self.marker("""{block}""")')
             self.yield_block = []
         self.lines.append(f'    {line}')
 
