@@ -26,6 +26,7 @@ def test_listing():
         </body>
     </html>"""
 
+    # FIXME what happened to yo={1} ?
     assert b == """<html>
         <body attr="blah"">
             <ul><li>High: Get milk</li><li>High: Change tires</li></ul>
