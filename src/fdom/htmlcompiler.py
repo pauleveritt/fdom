@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from html import escape
 from typing import Any, Callable
 
@@ -8,17 +8,21 @@ from fdom.basecompiler import BaseCompiler
 from fdom.taglib import Chunk, Conversion, Thunk
 
 
-class HTML:
+class HTMLIterator:
     """Marker class for HTML content"""
     @abstractmethod
     def __iter__(self):
         ...
 
 
-class HTMLRuntimeMixin(HTML):
+class HTML(str):
+    pass
+
+
+class HTMLRuntimeMixin(HTMLIterator):
     def __init__(self, args: list[Chunk | Thunk]):
         self.args = args
-        self.marker_class = HTML
+        self.marker_class = HTMLIterator
 
     def convert(self, obj: Any, conv: Conversion) -> str:
         match conv:
@@ -29,21 +33,28 @@ class HTMLRuntimeMixin(HTML):
             case 's' | None:
                 return str(obj)
 
-    # NOTE there is a subtle distinction here between
-    # - compile time: html.escape
-    # - run time: recursive_escape, which takes in account the HTML
-    #   marker
-    # There's probably a better name for this method to make it
-    # easier to understand what it does!
-
-    def recursive_escape(self, s: str | HTML):
-        match s:
+    def getvalue(self, index: int):
+        # FIXME handle conversions with conv
+        arg = self.args[index]
+        value = arg.getvalue()
+        fspec = '' if arg.formatspec is None else arg.formatspec
+        print(f'{arg=}, {value=}, {type(value)=}')
+        match value:
             case HTML():
-                yield from s
+                yield value
             case str():
-                yield escape(s)
+                yield HTML(escape(format(value, fspec)))
+            case Iterable():
+                for elem in value:
+                    match elem:
+                        case HTML():
+                            yield elem
+                        case str():
+                            yield HTML(escape(elem))
+                        case _:
+                            yield elem
             case _:
-                raise ValueError(f'Expected a string or HTML, not {type(s)!r}')
+                yield HTML(escape(format(value, fspec)))
 
     def get_tagname(self, *builder):
         # FIXME raise ValueError if a dynamic tagname results in an
@@ -124,6 +135,10 @@ def __iter__(self):
         self.yield_block.append(s)
 
     def add_interpolation(self, i: Interpolation) -> str:
+        # FIXME raise a ValueError if one attempts to interpolate HTML
+        # since this really doesn't make sense;
+        # also this should use the mixin to manage the interpolation,
+        # much like self.convert
         local_var = f'_arg{i.index}'
         formatspec = '' if i.formatspec is None else i.formatspec
         if i.conv is None:
@@ -133,6 +148,10 @@ def __iter__(self):
             self.add_line(
                 f'{local_var} = format(self.convert(self.args[{i.index}].getvalue(), {i.conv!r}), {formatspec!r})')
         return local_var
+
+    def add_element_interpolation(self, i: Interpolation) -> str:
+        formatspec = '' if i.formatspec is None else i.formatspec
+        self.add_line(f'yield from self.getvalue({i.index})')
 
     def add_line(self, line: str):
         if self.yield_block:
@@ -186,7 +205,7 @@ def __iter__(self):
                             self.add_line(f'yield self.get_key_value([{self.get_name_builder(k)}], [{self.get_name_builder(v)}])')
 
         # close the start tag
-        self.add_yield_string('>\n')
+        self.add_yield_string('>')
 
         # process children
         for child in tag.children:
@@ -194,7 +213,7 @@ def __iter__(self):
                 case str():
                     self.add_yield_string(escape(child))
                 case Interpolation() as i:
-                    self.add_line(f'yield from self.recursive_escape({self.add_interpolation(i)})')
+                    self.add_element_interpolation(i)
                 case Tag() as t:
                     self.compile(t, level + 1)
 
@@ -202,7 +221,7 @@ def __iter__(self):
         if tagname is None:
             self.add_line(f'yield self.get_end_tagname({tagname_builder})')
         else:
-            self.add_yield_string(f'</{tagname}>\n')
+            self.add_yield_string(f'</{tagname}>')
 
         # ensure all blocks are closed out
         if level == 1:

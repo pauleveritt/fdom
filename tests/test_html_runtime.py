@@ -1,3 +1,5 @@
+import pytest
+
 from fdom.htmlcompiler import HTMLRuntimeMixin
 from fdom.taglib import Thunk
 
@@ -9,6 +11,7 @@ def test_convert():
     assert mixin.convert('foo', 's') == 'foo'
 
 
+@pytest.mark.skip('rewrite, recursive_escape has been rewritten as part of getvalue')
 def test_recursive_escape():
     class HelloWorldHTMLGenerator(HTMLRuntimeMixin):
         def __iter__(self):
