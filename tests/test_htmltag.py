@@ -53,7 +53,6 @@ def test_listing_iter():
         </body>
     </html>""")
 
-    # FIXME what happened to yo={1} ?
     assert ''.join(b) == """<html>
         <body attr="blah" yo="1">
             <ul><li>High: Get milk</li><li>High: Change tires</li></ul>
