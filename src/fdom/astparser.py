@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Literal, NamedTuple
 
-from fdom.thunky import Chunk, Thunk, convert_to_proposed_scheme
+from fdom.taglib import Chunk, Thunk, convert_to_proposed_scheme
 
 """
 Supports parsing HTML templates with interpolations that can be arbitrarily placed:
@@ -102,6 +102,17 @@ def is_static_element(tagname: E) -> bool:
             return False
 
 
+# Per the docs on HTMLParser:
+#
+# "This parser does not check that end tags match start tags or call the
+# end-tag handler for elements which are closed implicitly by closing an
+# outer element."
+#
+# Currently this checking is only done on static tag names, that is
+# they do not contain interpolations. If they do contain interpolations,
+# this would have to be done as constraints that are checked when
+# rendering the template.
+
 class ASTParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -132,16 +143,22 @@ class ASTParser(HTMLParser):
             return None
         elif s == PLACEHOLDER:
             return [self.interpolations.popleft()]
+        elif s.split(PLACEHOLDER) == [s]:
+            return [unescape_placeholder(s)]
 
         expanded = []
         split = s.split(PLACEHOLDER)
+        len_split = len(split)
+
+        if split == [''] * len_split:
+            split = split[:-1]
+
         for i, item in enumerate(split):
-            if item == '':
-                expanded.append(self.interpolations.popleft())
-            else:
-                expanded.append(unescape_placeholder(item))
-                if i != len(split) - 1:
+            match item:
+                case '':
                     expanded.append(self.interpolations.popleft())
+                case _:
+                   expanded.append(unescape_placeholder(item))
         return expanded
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -172,6 +189,7 @@ class ASTParser(HTMLParser):
         # FIXME otherwise handle as a constraint - this needs to be added to the parsed result
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        # handle specially because the starttag had previously done all expansions, so no need to repeat
+        # Handle specially because the starttag had previously done all expansions,
+        # so there's no need to repeat
         self.handle_starttag(tag, attrs)
-        self.handlenode = self.stack.pop()
+        self.stack.pop()

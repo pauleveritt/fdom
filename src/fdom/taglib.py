@@ -19,10 +19,13 @@ class Chunk(str):
         return self._decoded
 
 
+Conversion = Literal['a', 'r', 's'] | None
+
+
 class Thunk(NamedTuple):
     getvalue: Callable[[], Any]
     text: str
-    conv: Literal['a', 'r', 's'] | None = None
+    conv: Conversion = None
     formatspec: str | None = None
 
 
