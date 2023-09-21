@@ -82,10 +82,10 @@ class HTMLRuntimeMixin(HTMLIterator):
                 for sub_k, sub_v in d.items():
                     styling_list.append(f'{sub_k}: {sub_v}')
                 styling = escape('; '.join(styling_list), quote=True)
-                return HTML(f' {k}="{styling}"')
+                return HTML(f'{k}="{styling}"')
             case _, _:
                 quoted_v = escape(str(v), quote=True)
-                return HTML(f' {k}="{quoted_v}"')
+                return HTML(f'{k}="{quoted_v}"')
 
     def get_attrs_dict(self, value: Any):
         attrs = []
@@ -189,6 +189,7 @@ def __iter__(self):
                             # eg 'disabled'
                             self.add_yield_string(f' {k[0]}')
                         case _:
+                            self.add_yield_string(f' ')
                             self.add_line(f'yield self.get_key_value({k[0]!r}, {self.get_name_builder(v)})')
                 case [Interpolation() as i] if v is None:
                     self.add_yield_string(' ')
