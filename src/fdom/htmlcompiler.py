@@ -71,7 +71,7 @@ class HTMLRuntimeMixin(HTMLIterator):
         match k, v:
             # Only show boolean keys if True
             case _, True:
-                return str(k)
+                return HTML(str(k))
             case _, False:
                 return None
             # FIXME are there other HTML attributes that use this formatting?
@@ -82,10 +82,10 @@ class HTMLRuntimeMixin(HTMLIterator):
                 for sub_k, sub_v in d.items():
                     styling_list.append(f'{sub_k}: {sub_v}')
                 styling = escape('; '.join(styling_list), quote=True)
-                return f'{k}="{styling}"'
+                return HTML(f' {k}="{styling}"')
             case _, _:
                 quoted_v = escape(str(v), quote=True)
-                return f'{k}="{quoted_v}"'
+                return HTML(f' {k}="{quoted_v}"')
 
     def get_attrs_dict(self, value: Any):
         attrs = []
@@ -152,7 +152,7 @@ def __iter__(self):
     def add_line(self, line: str):
         if self.yield_block:
             block = ''.join(self.yield_block)
-            self.lines.append(f'    yield self.marker("""{block}""")')
+            self.lines.append(f"    yield self.marker('''{block}''')")
             self.yield_block = []
         self.lines.append(f'    {line}')
 
@@ -178,8 +178,8 @@ def __iter__(self):
                 tagname_builder = self.get_name_builder(tag.tagname)
                 self.add_line(f'yield self.get_tagname({tagname_builder})')
 
-        # FIXME what escaping/sanity checking is required? For now, be simplistic
         for k, v in tag.attrs:
+            print(f'Interpolating {k=}, {v=}')
             match k:
                 case [str()]:
                     match v:
@@ -188,6 +188,8 @@ def __iter__(self):
                         case None:
                             # eg 'disabled'
                             self.add_yield_string(f' {k[0]}')
+                        case _:
+                            self.add_line(f'yield self.get_key_value({k[0]!r}, {self.get_name_builder(v)})')
                 case [Interpolation() as i] if v is None:
                     self.add_yield_string(' ')
                     name_arg = self.add_interpolation(i)
@@ -197,6 +199,7 @@ def __iter__(self):
                         case None:
                             raise ValueError('Cannot resolve multiple interpolations into a dict/bool interpolation')
                         case _:
+                            print(f'NB interpolating {k=}, {v=}')
                             self.add_yield_string(' ')
                             self.add_line(f'yield self.get_key_value([{self.get_name_builder(k)}], [{self.get_name_builder(v)}])')
 

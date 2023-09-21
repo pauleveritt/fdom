@@ -26,9 +26,8 @@ def test_listing():
         </body>
     </html>"""
 
-    # FIXME what happened to yo={1} ?
     assert b == """<html>
-        <body attr="blah">
+        <body attr="blah" yo="1">
             <ul><li>High: Get milk</li><li>High: Change tires</li></ul>
         </body>
     </html>"""
@@ -56,7 +55,7 @@ def test_listing_iter():
 
     # FIXME what happened to yo={1} ?
     assert ''.join(b) == """<html>
-        <body attr="blah">
+        <body attr="blah" yo="1">
             <ul><li>High: Get milk</li><li>High: Change tires</li></ul>
         </body>
     </html>"""
@@ -69,15 +68,14 @@ def test_sanitize():
     # Example from https://en.wikipedia.org/wiki/Cross-site_scripting
     injection_attempt = '<script>alert("xss");</script>'
 
-    # However it is properly sanitized
     assert html'<div>Here is your query: {injection_attempt}</div>' == \
         '<div>Here is your query: &lt;script&gt;alert(&quot;xss&quot;);&lt;/script&gt;</div>'
 
-    # FIXME currently failing to parse, then compile properly
-    assert html'<div attr="{injection_attempt}">Hello, world!</div>' is None
+    assert html'<div attr="{injection_attempt}">Hello, world!</div>' == \
+        '<div attr="&lt;script&gt;alert(&quot;xss&quot;);&lt;/script&gt;">Hello, world!</div>'
 
 
-def test_work_with_marker():
+def test_respect_html_marker():
     # Using HTML assures that the text is valid HTML as-is. Use carefully!
     arbitrary_html = HTML('<script>alert("No worries");</script>')
     assert html'<div>Here is an embedded script: {arbitrary_html}</div>' == \

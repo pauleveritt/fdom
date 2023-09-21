@@ -21,6 +21,7 @@ class BaseCompiler:
         self.lines.append(f"{indentation}{line}")
 
     def __call__(self, tag: Tag) -> Callable:
+        print("AST:\n", tag)
         self.compile(tag)
         print("Compiled code:\n", self.code)
 
