@@ -155,7 +155,7 @@ def __iter__(self):
                 f'{local_var} = format(self.convert(self.args[{i.index}].getvalue(), {i.conv!r}), {formatspec!r})')
         return local_var
 
-    def add_element_interpolation(self, i: Interpolation) -> str:
+    def add_child_interpolation(self, i: Interpolation) -> str:
         formatspec = '' if i.formatspec is None else i.formatspec
         self.add_line(f'yield from self.getvalue({i.index})')
 
@@ -221,7 +221,7 @@ def __iter__(self):
                 case str():
                     self.add_yield_string(escape(child))
                 case Interpolation() as i:
-                    self.add_element_interpolation(i)
+                    self.add_child_interpolation(i)
                 case Tag() as t:
                     self.compile(t, level + 1)
 
