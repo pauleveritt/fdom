@@ -33,6 +33,13 @@ def test_get_tagname_no_interpolations():
     assert mixin.get_tagname('a', 'b', 'c') == '<abc'
 
 
+def test_invalid_tagname():
+    mixin = HTMLRuntimeMixin([])
+    with pytest.raises(ValueError) as excinfo:
+        mixin.get_tagname('1', '2', '3')
+    assert str(excinfo.value) == "Invalid tag name: '123'"
+
+
 def test_get_tagname_with_interpolations():
     class TagNameGenerator(HTMLRuntimeMixin):
         def __iter__(self):
@@ -72,3 +79,11 @@ def test_get_attrs_dict():
         Thunk(lambda: {'foo': 42, 'blink': 'on', 'disabled': False}, '...', None, None),
     ])
     assert list(gen) == ['foo="42" blink="on"']
+
+
+
+def test_invalid_attribute_name():
+    mixin = HTMLRuntimeMixin([])
+    with pytest.raises(ValueError) as excinfo:
+        mixin.check_valid_attribute_name('123')
+    assert str(excinfo.value) == "Invalid attribute name: '123'"

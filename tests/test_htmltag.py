@@ -82,3 +82,9 @@ def test_respect_html_marker():
         '<div>Here is an embedded script: <script>alert("No worries");</script></div>'
 
 
+def test_dynamic_attribute():
+    # NOTE this is probably correct HTML, but it should be doublechecked!
+    action = 'click'
+    alert = HTML('alert("Clicked!");')
+    assert html'<div on{action}="{alert}"/>' == \
+        '<div onclick="alert(&quot;Clicked!&quot;);"></div>'

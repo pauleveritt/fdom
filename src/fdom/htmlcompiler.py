@@ -2,6 +2,7 @@ from abc import abstractmethod
 from collections.abc import Generator, Iterable
 from html import escape
 from typing import Any, Callable
+import re
 
 from fdom.astparser import E, Interpolation, Tag, is_static_element
 from fdom.basecompiler import BaseCompiler
@@ -9,14 +10,18 @@ from fdom.taglib import Chunk, Conversion, Thunk
 
 
 class HTMLIterator:
-    """Marker class for HTML content"""
     @abstractmethod
     def __iter__(self):
         ...
 
 
 class HTML(str):
+    """Marker class for HTML content"""
     pass
+
+
+attribute_name_re = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_\-\.]*$')
+tagname_re = re.compile(r'^(?!.*--)(?!-?[0-9])[\w-]+(-[\w-]+|[a-zA-Z])?$')
 
 
 class HTMLRuntimeMixin(HTMLIterator):
@@ -52,22 +57,27 @@ class HTMLRuntimeMixin(HTMLIterator):
         fspec = '' if arg.formatspec is None else arg.formatspec
         yield from self.unpack_value(value, fspec)
 
-    def get_tagname(self, *builder):
-        # FIXME raise ValueError if a dynamic tagname results in an
-        # invalid name, but first determine what are invalid tagnames
-        # from an appropriate RFC
+    def check_valid_tagname(self, tagname: str):
+        if not tagname_re.match(tagname):
+            raise ValueError(f'Invalid tag name: {tagname!r}')
 
-        # NOTE the quoting here - builder can be made up of
-        # single-quoted strings (because of the use of repr) or variable
-        # names
-        return HTML(f"<{''.join(builder)}")
+    def check_valid_attribute_name(self, attribute_name: str):
+        if not attribute_name_re.match(attribute_name):
+            raise ValueError(f'Invalid attribute name: {attribute_name!r}')
 
-    def get_end_tagname(self, *builder: str):
-        # FIXME ditto
-        return HTML(f"</{''.join(builder)}>")
+    def get_tagname(self, *builder: str) -> str:
+        tagname = ''.join(builder)
+        self.check_valid_tagname(tagname)
+        return HTML(f"<{tagname}")
 
-    def get_key_value(self, k: str, v: Any) -> str:
-        # FIXME need to consider invalid keys
+    def get_end_tagname(self, *builder: str) -> str:
+        tagname = ''.join(builder)
+        self.check_valid_tagname(tagname)
+        return HTML(f"</{tagname}>")
+
+    def get_key_value(self, k_builder: list[str], v: bool | dict | list[Any]) -> str:
+        k = ''.join(k_builder)
+        self.check_valid_attribute_name(k)
         match k, v:
             # Only show boolean keys if True
             case _, True:
@@ -83,19 +93,23 @@ class HTMLRuntimeMixin(HTMLIterator):
                     styling_list.append(f'{sub_k}: {sub_v}')
                 styling = escape('; '.join(styling_list), quote=True)
                 return HTML(f'{k}="{styling}"')
+            case _, list() as v_list:
+                quoted_v = escape(''.join(str(part) for part in v_list), quote=True)
+                return HTML(f'{k}="{quoted_v}"')
             case _, _:
                 quoted_v = escape(str(v), quote=True)
                 return HTML(f'{k}="{quoted_v}"')
+
 
     def get_attrs_dict(self, value: Any):
         attrs = []
         match value:
             case dict() as d:
                 for k, v in d.items():
-                    setting = self.get_key_value(k, v)
+                    setting = self.get_key_value([k], v)
                     if setting is not None:
                         attrs.append(setting)
-                return ' '.join(attrs)
+                return HTML(' '.join(attrs))
             case _:
                 raise ValueError(f'Attributes must be a dict, not {type(value)!r}')
 
@@ -131,10 +145,6 @@ def __iter__(self):
         self.yield_block.append(s)
 
     def add_interpolation(self, i: Interpolation) -> str:
-        # FIXME raise a ValueError if one attempts to interpolate HTML
-        # since this really doesn't make sense;
-        # also this should use the mixin to manage the interpolation,
-        # much like self.convert
         local_var = f'_arg{i.index}'
         formatspec = '' if i.formatspec is None else i.formatspec
         if i.conv is None:
@@ -179,7 +189,6 @@ def __iter__(self):
                 self.add_line(f'yield self.get_tagname({tagname_builder})')
 
         for k, v in tag.attrs:
-            print(f'Interpolating {k=}, {v=}')
             match k:
                 case [str()]:
                     match v:
@@ -190,7 +199,7 @@ def __iter__(self):
                             self.add_yield_string(f' {k[0]}')
                         case _:
                             self.add_yield_string(f' ')
-                            self.add_line(f'yield self.get_key_value({k[0]!r}, {self.get_name_builder(v)})')
+                            self.add_line(f'yield self.get_key_value({k[0]!r}, [{self.get_name_builder(v)}])')
                 case [Interpolation() as i] if v is None:
                     self.add_yield_string(' ')
                     name_arg = self.add_interpolation(i)
@@ -200,7 +209,6 @@ def __iter__(self):
                         case None:
                             raise ValueError('Cannot resolve multiple interpolations into a dict/bool interpolation')
                         case _:
-                            print(f'NB interpolating {k=}, {v=}')
                             self.add_yield_string(' ')
                             self.add_line(f'yield self.get_key_value([{self.get_name_builder(k)}], [{self.get_name_builder(v)}])')
 
