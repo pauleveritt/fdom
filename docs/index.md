@@ -6,6 +6,7 @@ Sphinx with Markdown files on disk. Perhaps it is a DBMS system like Django whic
 This project writes science fiction describing how it might work, and thus helping build a stack that accomplishes it.
 
 ```{toctree}
+examples/index
 database
 phases
 resources

@@ -26,7 +26,7 @@ the input document to `output/a.txt`.
 
 The system scans the `content` directory and produces a batch of "changes":
 
-```json5
+```json
 [
   {
     "path": "a.txt",
@@ -37,12 +37,12 @@ The system scans the `content` directory and produces a batch of "changes":
 
 After processing, the sources table now looks like this:
 
-```json5
+```json
 [
   {
     "path": "a.txt",
     "hash": "X3A234",
-    content: "Hello World"
+    "content": "Hello World"
   }
 ]
 ```
@@ -69,7 +69,7 @@ happens and a message is logged with the number of unchanged documents.
 When the run happens, the build system "diffs" the `content` directory and the `sources` table and determines these are
 the changes:
 
-```json5
+```json
 {}
 ```
 
@@ -77,7 +77,7 @@ Nothing changed. It's the same files on disk with the same hashes, as compared t
 
 The build system then needs to do a similar "diff" with the `build` directory. Thus, a `build` table:
 
-```json5
+```json
 [
   {
     "path": "a.txt",
@@ -104,7 +104,7 @@ build copies the content to `build/a.txt` and updates the cache.
 
 The changes:
 
-```json5
+```json
 {
   "edits": [
     {
@@ -117,19 +117,19 @@ The changes:
 
 The `sources` table now has:
 
-```json5
+```json
 [
   {
     "path": "a.txt",
     "hash": "QZ234A",
-    content: "Hello World"
+    "content": "Hello World"
   }
 ]
 ```
 
 And finally, the `build` table:
 
-```json5
+```json
 [
   {
     "path": "a.txt",
@@ -153,7 +153,7 @@ output.
 You delete `content/a.txt` and run the build. It collects all the paths under `content` and their hashes. The build then
 does the "diff" against `sources` and determines the changeset:
 
-```json5
+```json
 {
   "delete": [
     {
@@ -165,13 +165,13 @@ does the "diff" against `sources` and determines the changeset:
 
 The `sources` table is now empty:
 
-```json5
+```json
 []
 ```
 
 As is the `build` table:
 
-```json5
+```json
 []
 ```
 
