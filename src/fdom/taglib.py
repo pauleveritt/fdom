@@ -9,7 +9,7 @@ class Chunk(str):
 
     @property
     def decoded(self) -> str:
-        """Convert string to bytes then, applying decoding escapes.
+        """Apply unicode decoding and cache the result, then return.
 
         Uses the same internal code functionality as Python's parser
         does to perform the actual decode.
@@ -29,7 +29,7 @@ class Thunk(NamedTuple):
     formatspec: str | None = None
 
 
-def convert_to_proposed_scheme(*args: str|tuple):
+def convert_to_proposed_scheme(*args: str|tuple) -> tuple[Chunk | Thunk]:
     proposed_args = []
     for arg in args:
        match arg:

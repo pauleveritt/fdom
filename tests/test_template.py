@@ -1,7 +1,7 @@
 from functools import partial
 from typing import Any, Callable, Literal
 
-from fdom.taglib import convert_to_proposed_scheme, Chunk, Thunk
+from fdom.taglib import convert_to_proposed_scheme, Conversion, Chunk, Thunk
 
 
 def make_template(tag: Callable, template: str) -> Callable:
@@ -35,7 +35,7 @@ def f(tag, {params}):
     return partial(namespace['f'], tag=tag)
 
 
-def convert(value: Any, conv: Literal['a', 'r', 's'] | None) -> str:
+def convert(value: Any, conv: Conversion) -> str:
     match conv:
         case 'a':
             return ascii(value)
