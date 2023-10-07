@@ -21,3 +21,8 @@ def test_pipe():
     user = User(name='Arthur', title='King')
     assert html'<h1>Report for {user.title} {user.name | upper}</h1>' == \
         '<h1>Report for King ARTHUR</h1>'
+
+def test_dual_use():
+    user = User(name='Arthur', title='King')
+    assert html'<h1>Report for {user.title} {upper(user.name)}</h1>' == \
+        '<h1>Report for King ARTHUR</h1>'
