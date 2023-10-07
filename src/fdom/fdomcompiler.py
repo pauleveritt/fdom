@@ -133,32 +133,16 @@ class FdomRuntimeMixin:
 
 class FdomCompiler(BaseCompiler):
 
-    def __init__(self, indent=2):
-        self.yield_block = []
-        self.preamble = '\ndef __call__(self):'
-        super().__init__()
-        self.name = '__call__'
+    def __init__(self, indent=2, name='__call__', mixin=FdomRuntimeMixin):
+        self.mixin = mixin
+        self.preamble = f"""
+def {name}(self):
+  return \\"""
+        super().__init__(indent=indent, name=name)
 
     def __call__(self, tag: Tag) -> Callable:
         code = super().__call__(tag)
-        return type('TemplateRenderer', (FdomRuntimeMixin,), {'__call__': code})
-
-    def add_interpolation(self, i: Interpolation) -> str:
-        local_var = f'_arg{i.index}'
-        formatspec = '' if i.formatspec is None else i.formatspec
-        if i.conv is None:
-            self.add_line(
-                f'{local_var} = format(self.args[{i.index}].getvalue(), {formatspec!r})')
-        else:
-            self.add_line(
-                f'{local_var} = format(self.convert(self.args[{i.index}].getvalue(), {i.conv!r}), {formatspec!r})')
-        return local_var
-
-    def add_child_interpolation(self, level: int, i: Interpolation) -> str:
-        # need to supply formatspec, conv
-        # refactor formulations like this:
-        # formatspec = '' if i.formatspec is None else i.formatspec
-        self.add_line(level, 'self.getvalue({i.index}),')
+        return type('TemplateRenderer', (self.mixin,), {self.name: code})
 
     def get_name_builder(self, elements: E):
         name_args = []
@@ -167,30 +151,31 @@ class FdomCompiler(BaseCompiler):
                 case str() as s:
                     name_args.append(repr(s))
                 case Interpolation() as i:
-                    name_args.append(self.add_interpolation(i))
+                    name_args.append(f'self.getvalue({i.index})')
         return ', '.join(name_args)
 
     def compile(self, tag: Tag, level=1):
-        tagname = None
-
         # process the starting tagname itself
         match tag:
             case Tag(tagname=[str() as tagname]):
-                # no interpolations, so can special case
-                self.add_line(level + 1, f'self.tags.{tagname}(')
+                self.add_line(level, f'self.tags.{tagname}(')
             case Tag(tagname=[Interpolation() as i]):
-                self.add_line(level + 1, f'self.args[{i.index}].getvalue()(')
+                self.add_line(level, f'self.args[{i.index}].getvalue()(')
             case Tag():
-                pass  # FIXME ignore for now, but support <h{level}> etc tags
+                tagname_builder = self.get_name_builder(tag.tagname)
+                self.add_line(level, f'self.dynamic_tag([{tagname_builder}])(')
 
         self.add_line(level + 1, 'attrs={')
         for k, v in tag.attrs:
             match k:
                 case [str()]:
-                    self.add_line(level + 2, f'{k[0]!r}: {v[0]!r},')
+                    match v:
+                        case [str()]:
+                            self.add_line(level + 2, f'{k[0]!r}: {v[0]!r},')
+                        case None:
+                            self.add_line(level + 2, f'{k[0]!r}: True,')
                 case [Interpolation() as i] if v is None:
-                    name_arg = self.add_interpolation(i)
-                    self.add_line(level + 2, f'**self.get_attrs_dict({name_arg}),')
+                    self.add_line(level + 2, f'**self.get_attrs_dict({i.index}),')
                 case _:
                     match v:
                         case None:
@@ -206,7 +191,7 @@ class FdomCompiler(BaseCompiler):
                 case str():
                     self.add_line(level + 2, f'{child!r},')
                 case Interpolation() as i:
-                    self.add_child_interpolation(level + 2, i)
+                    self.add_line(level + 2, f'self.getvalue({i.index}),')
                 case Tag() as t:
                     self.compile(t, level + 2)
         self.add_line(level + 1, ']')

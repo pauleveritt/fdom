@@ -9,6 +9,7 @@ from fdom.taglib import Chunk, Thunk, convert_to_proposed_scheme
 @lru_cache
 def compile_template(*keyed_args) -> Callable:
     ast = parse_keyed_template_as_ast(*keyed_args)
+    print('Compiling...')
     return HTMLCompiler()(ast)
 
 

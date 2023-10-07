@@ -100,7 +100,6 @@ class HTMLRuntimeMixin(HTMLIterator):
                 quoted_v = escape(str(v), quote=True)
                 return HTML(f'{k}="{quoted_v}"')
 
-
     def get_attrs_dict(self, value: Any):
         attrs = []
         match value:
@@ -128,11 +127,9 @@ class HTMLCompiler(BaseCompiler):
 
     def __init__(self, indent=2):
         self.yield_block = []
-        self.preamble = \
-            f"""
-def __iter__(self):"""
-        super().__init__()
-        self.name = '__iter__'
+        # FIXME why the leading \n?
+        self.preamble = '\ndef __iter__(self):'
+        super().__init__(indent=indent, name='__iter__')
 
     def __call__(self, tag: Tag) -> Callable:
         code = super().__call__(tag)

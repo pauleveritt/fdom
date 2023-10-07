@@ -17,16 +17,18 @@ class BaseCompiler:
         return "\n".join(self.lines)
 
     def add_line(self, level, line):
-        indentation = " " * self.indent * (level + 1)
+        indentation = " " * self.indent * level
         self.lines.append(f"{indentation}{line}")
 
     def __call__(self, tag: Tag) -> Callable:
-        print("AST:\n", tag)
+        print(f'AST {self.name=}')
+        print(tag)
         self.compile(tag)
-        print("Compiled code:\n", self.code)
+        print('Compiled code:')
+        print(self.code)
 
         # standard boilerplate to compile a string into a callable
-        code_obj = compile(self.code, "<string>", "exec")
+        code_obj = compile(self.code, '<string>', 'exec')
         captured = {}
         exec(code_obj, captured)
         return captured[self.name]
