@@ -130,8 +130,7 @@ class HTMLCompiler(BaseCompiler):
         self.yield_block = []
         self.preamble = \
             f"""
-def __iter__(self):
-"""
+def __iter__(self):"""
         super().__init__()
         self.name = '__iter__'
 
@@ -140,8 +139,8 @@ def __iter__(self):
         return type('TemplateRenderer', (HTMLRuntimeMixin,), {'__iter__': code})
 
     def add_yield_string(self, s: str):
-        # NOTE enables coalescing static lines of text together in one
-        # yield
+        # NOTE enables the coalescing of static lines of text together
+        # in one yield
         self.yield_block.append(s)
 
     def add_interpolation(self, i: Interpolation) -> str:
@@ -162,7 +161,11 @@ def __iter__(self):
     def add_line(self, line: str):
         if self.yield_block:
             block = ''.join(self.yield_block)
-            self.lines.append(f"    yield self.marker('''{block}''')")
+            block.replace("'", r"\'")
+            if '\n' in block:
+                self.lines.append(f"    yield self.marker('''{block}''')")
+            else:
+                self.lines.append(f"    yield self.marker('{block}')")
             self.yield_block = []
         self.lines.append(f'    {line}')
 
